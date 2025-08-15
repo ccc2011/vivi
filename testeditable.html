@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>我的可编辑文档</title>
+    <!-- 引入 html2canvas 库，用于将HTML内容转换为图片 -->
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <!-- 引入 jsPDF 库，用于直接生成 PDF 文件 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- 引入 dom-to-image 库，用于更精确地将DOM节点转换为图片 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dom-to-image/2.6.0/dom-to-image.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+            background-color: #f4f7f9;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .document-container {
+            position: relative; /* 为水印定位 */
+            width: 100%;
+            max-width: 800px;
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            min-height: 400px;
+            outline: none;
+            line-height: 1.6;
+            margin-bottom: 20px;
+            border: 1px solid #e0e6ed;
+            cursor: text; /* Change cursor to text to indicate it's editable */
+        }
+        
+        .document-container:focus {
+            box-shadow: 0 0 0 4px rgba(66, 153, 225, 0.6); /* Add a blue glow on focus */
+        }
+
+        .button-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 20px;
+            align-items: center;
+        }
+
+        .action-button {
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            color: #ffffff;
+            background-color: #4299e1;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .action-button:hover {
+            background-color: #3182ce;
+            transform: translateY(-2px);
+        }
+
+        .action-button:active {
+            background-color: #2b6cb0;
+            transform: translateY(0);
+        }
+        
+        .watermark-text-input {
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .watermark {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-45deg);
+            font-size: 48px;
+            font-weight: bold;
+            color: rgba(0, 0, 0, 0.1); /* 半透明效果 */
+            pointer-events: none; /* 确保水印不影响编辑 */
+            z-index: 10;
+        }
+
+        /* 确保插入的图片不超过容器宽度 */
+        .document-container img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 10px 0;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="button-group">
+        <input type="text" id="watermarkInput" class="watermark-text-input" placeholder="输入水印文字">
+        <button id="addWatermarkButton" class="action-button">添加水印</button>
+        <button id="savePDFButton" class="action-button">保存为PDF（不可编辑）</button>
+        <!-- 新增的图片插入按钮和隐藏的文件输入框 -->
+        <input type="file" id="imageInput" accept="image/*" style="display: none;">
+        <button id="insertImageButton" class="action-button">插入图片</button>
+        <!-- 新增的富文本编辑按钮 -->
+        <button id="boldButton" class="action-button">加粗</button>
+        <button id="italicButton" class="action-button">斜体</button>
+        <button id="underlineButton" class="action-button">下划线</button>
+    </div>
+
+    <!-- contenteditable="true" makes this div editable -->
+    <div id="documentEditor" class="document-container" contenteditable="true">
+        <h2>我的可编辑文档</h2>
+        <p>欢迎来到你的专属可编辑文档！你可以在这里自由地输入和编辑文字，就像在使用一个简单的文本编辑器。完成后，你可以选择保存为不可编辑的PDF，分享给你的客户。</p>
+        <p><b>提示:</b></p>
+        <ul>
+            <li>双击文本可以进入编辑状态。</li>
+            <li>您可以使用 `Ctrl + S` 保存文件。</li>
+        </ul>
+        <p>这里的内容都可以被编辑和删除。你可以写上你的报价单、合同模板或任何需要客户确认的内容。</p>
+    </div>
+
+    <script>
+        // Get the document container and button elements
+        const documentEditor = document.getElementById('documentEditor');
+        const savePDFButton = document.getElementById('savePDFButton');
+        const watermarkInput = document.getElementById('watermarkInput');
+        const addWatermarkButton = document.getElementById('addWatermarkButton');
+        const imageInput = document.getElementById('imageInput');
+        const insertImageButton = document.getElementById('insertImageButton');
+        // Get the new rich text buttons
+        const boldButton = document.getElementById('boldButton');
+        const italicButton = document.getElementById('italicButton');
+        const underlineButton = document.getElementById('underlineButton');
+
+
+        // Add a click event listener to the "Save to PDF" button
+        savePDFButton.addEventListener('click', async () => {
+            // Temporarily hide the button group for a cleaner screenshot
+            const buttonGroup = document.querySelector('.button-group');
+            buttonGroup.style.display = 'none';
+
+            // Use dom-to-image to convert the document container to an image data URL
+            domtoimage.toJpeg(documentEditor, { quality: 0.95, style: { padding: '20px' } })
+                .then(function (imgData) {
+                    // Create a new jsPDF instance
+                    const { jsPDF } = window.jspdf;
+                    const pdf = new jsPDF('p', 'mm', 'a4'); // Create an A4 PDF
+                    
+                    // Add the image to the PDF
+                    const imgProps = pdf.getImageProperties(imgData);
+                    const pdfWidth = pdf.internal.pageSize.getWidth();
+                    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+                    pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+
+                    // Save the PDF file
+                    pdf.save('我的文档.pdf');
+
+                    // Restore the button group display
+                    buttonGroup.style.display = 'flex';
+                })
+                .catch(function (error) {
+                    // Log any errors to the console
+                    console.error('oops, something went wrong!', error);
+                });
+        });
+
+        // Add a click event listener to the "Add Watermark" button
+        addWatermarkButton.addEventListener('click', () => {
+            const watermarkText = watermarkInput.value;
+            if (watermarkText) {
+                // Remove any existing watermark first
+                let existingWatermark = document.querySelector('.watermark');
+                if (existingWatermark) {
+                    documentEditor.removeChild(existingWatermark);
+                }
+
+                // Create a new watermark element
+                let watermark = document.createElement('div');
+                watermark.className = 'watermark';
+                watermark.textContent = watermarkText;
+                
+                // Add the watermark to the document editor
+                documentEditor.appendChild(watermark);
+            }
+        });
+
+        // Add a click event listener to the "Insert Image" button
+        insertImageButton.addEventListener('click', () => {
+            imageInput.click(); // Programmatically click the hidden file input
+        });
+
+        // Add a change event listener to the hidden file input
+        imageInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const img = document.createElement('img');
+                    img.src = e.target.result;
+                    
+                    // Insert the image into the document at the current cursor position
+                    const selection = window.getSelection();
+                    if (selection.rangeCount > 0) {
+                        const range = selection.getRangeAt(0);
+                        range.deleteContents();
+                        range.insertNode(img);
+                    } else {
+                        documentEditor.appendChild(img);
+                    }
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Add event listeners for rich text editing
+        boldButton.addEventListener('click', () => {
+            // execCommand 用于执行加粗命令
+            document.execCommand('bold', false, null);
+        });
+
+        italicButton.addEventListener('click', () => {
+            // execCommand 用于执行斜体命令
+            document.execCommand('italic', false, null);
+        });
+
+        underlineButton.addEventListener('click', () => {
+            // execCommand 用于执行下划线命令
+            document.execCommand('underline', false, null);
+        });
+    </script>
+</body>
+</html>
